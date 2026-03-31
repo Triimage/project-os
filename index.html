@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#09090e">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Project OS">
+  <meta name="description" content="ADHD-friendly project management system">
+
+  <title>Project OS</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="./manifest.webmanifest">
+
+  <!-- Apple touch icon (Safari PWA) -->
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     TOP BAR — install / export / import buttons
+     (hidden by default, shown on large screens)
+     ═══════════════════════════════════════════ -->
+<div id="topbar" style="
+  position:fixed;top:0;right:0;z-index:60;
+  display:flex;align-items:center;gap:8px;padding:10px 16px;
+">
+  <!-- Install button: hidden until beforeinstallprompt fires -->
+  <button id="install-btn" data-action="install-app" style="display:none;align-items:center;gap:7px;
+    padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
+    background:rgba(244,162,58,0.15);color:#f4a23a;border:1px solid rgba(244,162,58,0.35);
+    font-family:'DM Sans',sans-serif;transition:all .14s;" title="Install as app">
+    <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+      <path d="M12 3v13M7 11l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    Install App
+  </button>
+
+  <!-- Export backup -->
+  <button data-action="export-data" style="
+    display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;
+    font-size:12px;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.05);
+    color:#9090b0;border:1px solid rgba(255,255,255,0.1);font-family:'DM Sans',sans-serif;
+    transition:all .14s;" title="Export backup JSON">
+    <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Export
+  </button>
+
+  <!-- Import backup -->
+  <button data-action="import-data-btn" style="
+    display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;
+    font-size:12px;font-weight:600;cursor:pointer;background:rgba(255,255,255,0.05);
+    color:#9090b0;border:1px solid rgba(255,255,255,0.1);font-family:'DM Sans',sans-serif;
+    transition:all .14s;" title="Restore from backup JSON">
+    <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Import
+  </button>
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-hidden" accept=".json" style="display:none"
+    onchange="importData(this.files[0]); this.value='';">
+</div>
+
+<!-- ═══════════════════════════════════
+     MAIN APP SHELL
+     ═══════════════════════════════════ -->
+<div id="app">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main">
+    <div class="page-content" id="page-content"></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════
+     SCRIPTS — order matters:
+     1. db.js   (storage adapter)
+     2. app.js  (all app logic)
+     ═══════════════════════════════════ -->
+<script src="./db.js"></script>
+<script src="./app.js"></script>
+
+</body>
+</html>
