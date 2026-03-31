@@ -554,7 +554,7 @@ function renderImport() {
       '<svg viewBox="0 0 41 41" width="28" height="28" fill="none"><path d="M37.532 16.87a9.963 9.963 0 0 0-.856-8.184 10.078 10.078 0 0 0-10.855-4.835 9.964 9.964 0 0 0-6.111-4.668 10.079 10.079 0 0 0-11.563 5.032 9.964 9.964 0 0 0-6.24 4.197 10.079 10.079 0 0 0 1.24 11.817 9.965 9.965 0 0 0 .856 8.185 10.079 10.079 0 0 0 10.855 4.835 9.965 9.965 0 0 0 6.111 4.667 10.079 10.079 0 0 0 11.563-5.032 9.965 9.965 0 0 0 6.24-4.196 10.079 10.079 0 0 0-1.24-11.818zm-25.134 7.964a3.058 3.058 0 0 1-1.87-2.719v-8.541a3.058 3.058 0 0 1 1.573-2.685 3.057 3.057 0 0 1 3.115.124l6.774 3.959a3.058 3.058 0 0 1 0 5.295l-6.774 3.959a3.057 3.057 0 0 1-2.818.608z" fill="currentColor" opacity=".5"/></svg>' +
       'ChatGPT Import' +
     '</div>' +
-    '<div class="page-subtitle">Pull your ChatGPT conversations into Project OS — AI auto-categorizes everything</div>' +
+    '<div class="page-subtitle">Pull your ChatGPT conversations into Project OS — built-in heuristics pre-sort them for review</div>' +
   '</div>' + stepIndicator + body;
 }
 
@@ -592,8 +592,8 @@ function renderImportStep1() {
   ) +
 
   '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:10px">' +
-    '<div style="font-size:12px;color:var(--t3)">Claude AI will classify each one as a project or a one-off, assign a type, and suggest a Definition of Done.</div>' +
-    '<button class="btn btn-primary" data-action="import-analyze">Analyze with Claude AI &rarr;</button>' +
+    '<div style="font-size:12px;color:var(--t3)">Project OS will pre-sort likely projects, suggest a type, and draft a starter Definition of Done for review.</div>' +
+    '<button class="btn btn-primary" data-action="import-analyze">Analyze Imports &rarr;</button>' +
   '</div>';
 }
 
@@ -602,9 +602,9 @@ function renderImportStep2() {
   const found = importState.results.filter(r=>r.isProject).length;
   return '<div class="ai-analyzing">' +
     '<div class="ai-spinner"></div>' +
-    '<div class="ai-analyzing-text">Claude is reading your ChatGPT history...</div>' +
-    '<div class="ai-analyzing-sub">Reading conversation titles and first messages. Classifying as projects vs one-offs, assigning types, and drafting Definitions of Done and first actions.</div>' +
-    '<div id="import-status-msg" style="font-size:12px;color:var(--green);font-family:\'DM Mono\',monospace;min-height:18px">' + (found ? 'Found ' + found + ' projects so far...' : '') + '</div>' +
+    '<div class="ai-analyzing-text">Project OS is organizing your ChatGPT history...</div>' +
+    '<div class="ai-analyzing-sub">Reading conversation titles and first messages. Pre-sorting likely projects, assigning types, and drafting starter next actions.</div>' +
+    '<div id="import-status-msg" style="font-size:12px;color:var(--green);font-family:\'DM Mono\',monospace;min-height:18px">' + (found ? 'Found ' + found + ' likely projects so far...' : '') + '</div>' +
     '<div style="width:300px">' +
       '<div style="display:flex;justify-content:space-between;margin-bottom:5px">' +
         '<span id="import-progress-count" style="font-size:11px;color:var(--t3);font-family:\'DM Mono\',monospace">' + importState.progress + ' / ' + importState.progressMax + ' processed</span>' +
@@ -769,7 +769,7 @@ function updateProgressUI() {
   const statusEl = document.getElementById('import-status-msg');
   if (statusEl) {
     const found = importState.results.filter(r => r.isProject).length;
-    statusEl.textContent = 'Found ' + found + ' projects so far...';
+    statusEl.textContent = 'Found ' + found + ' likely projects so far...';
   }
 }
 
@@ -821,96 +821,93 @@ async function runAnalysis() {
   renderPage();
 }
 
-async function analyzeBatch(items, existingNames) {
-  const hasMessages = items.some(i => i.firstMessage);
 
-  // Build rich input for Claude — title + first message when available
-  const inputData = items.map((i, idx) => {
-    const entry = { idx, title: i.title };
-    if (i.firstMessage) entry.firstMessage = i.firstMessage;
-    if (i.messageCount > 1) entry.messageCount = i.messageCount;
-    return entry;
-  });
+function inferTypeFromText(text) {
+  const t = (text || '').toLowerCase();
+  if (/(ebay|shopify|etsy|listing|store|pricing|customer|brand|branding|rfq|invoice|shipping|sales|revenue|instagram|website)/.test(t)) return 'Business';
+  if (/(doctor|health|insurance|rent|bill|subscription|tax|taxes|court|legal|lawyer|travel|trip|calendar|budget|bank|phone|wifi|internet)/.test(t)) return 'Life Admin';
+  if (/(design|logo|banner|art|draw|poster|caption|anime|story|movie|music|video|twitch|youtube|ui|ux|html prototype)/.test(t)) return 'Creative';
+  if (/(idea|what if|future|research|should i|could i|maybe|anti-?gravity|theory|concept)/.test(t)) return 'Future Idea';
+  return 'Technical';
+}
 
-  const prompt = `You are a project management AI helping organize a maker/engineer's ChatGPT conversation history into projects.
+function inferEnergy(type, text) {
+  const t = (text || '').toLowerCase();
+  if (/(prototype|build|kernel|robot|battery|bms|motor|firmware|fabrication|engine|conversion|lawsuit|court)/.test(t)) return 'High';
+  if (/(plan|roadmap|phase|design|sync|import|app|website|listing|budget|organize)/.test(t)) return 'Medium';
+  if (type === 'Life Admin') return 'Low';
+  return 'Medium';
+}
 
-The user builds: custom OS kernels in Rust, EVs, bipedal robots, vinyl decal business, ADHD productivity tools, 3D printing, hardware electronics.
+function cleanProjectName(title) {
+  if (!title) return 'Untitled Project';
+  let out = title.trim()
+    .replace(/^(how to|help me|can you|what is|what\'s|whats|should i|best)\s+/i, '')
+    .replace(/\?+$/g, '')
+    .trim();
+  return out.slice(0, 60) || title.trim().slice(0, 60);
+}
 
-Here are the conversations to classify:
-${JSON.stringify(inputData, null, 1)}
+function heuristicAnalyzeBatch(items, existingNames) {
+  return items.map(i => {
+    const title = (i.title || '').trim();
+    const first = (i.firstMessage || '').trim();
+    const combined = (title + ' ' + first).trim();
+    const lc = combined.toLowerCase();
 
-For EACH entry (by idx), return a JSON array where each object has:
-- "idx": same number as input (required for matching)
-- "title": the original title
-- "isProject": true if this represents ongoing work with a goal and output; false if it's a quick question, lookup, or one-off that took <10 min
-- "name": clean project name — noun phrase, no "How to" / "Help with" / "Can you" filler. Max 60 chars.
-- "type": exactly one of: "Creative" | "Technical" | "Business" | "Life Admin" | "Future Idea"
-- "energy": exactly one of: "Low" | "Medium" | "High"
-- "dod": 1-sentence Definition of Done if isProject=true, else ""
-- "context": 1-2 sentences describing what the project is about if isProject=true, else ""
-- "suggestedNPA": a specific next physical action to start this project (verb + where + output), if isProject=true, else ""
+    const obviousOneOff = /^(what is|what\'s|whats|who is|why is|when is|where is|can i|does |do i |is there |best |quote |meaning of |how much )/.test(title.toLowerCase())
+      || /(definition|quote|capital|owner|price|drama|pros and cons|what does)/.test(lc);
 
-Type guidance:
-- Technical: software, code, hardware, OS, kernel, EV, motors, electronics, robotics, PCB, firmware, AI/ML
-- Business: ecommerce, sales, pricing, eBay, Instagram, marketing, customers, shipping, branding
-- Creative: design, writing, art, music, video, UI/UX, 3D modeling, graphic design
-- Life Admin: health, finance, home, travel, legal, personal org, subscriptions
-- Future Idea: research, "what if", speculative, early exploration with no clear output yet
+    const obviousProject = /(build|design|create|make|prototype|roadmap|phase|system|workflow|app|os|robot|battery|bms|website|business|brand|conversion|printer|import|sync|organizer|project)/.test(lc)
+      || (i.messageCount || 0) >= 3
+      || /(i want to|i need to|my goal|i'm building|im building|i am building|i want this to)/.test(first.toLowerCase());
 
-isProject=false for: single factual questions, error messages someone just wanted fixed, quick conversions, "what does X mean", anything clearly resolved in one reply.
-isProject=true if: the conversation has 3+ messages, OR involves building/designing/planning something, OR the first message describes a goal/system/project.
+    const isProject = obviousProject && !obviousOneOff;
+    const type = inferTypeFromText(combined);
+    const energy = inferEnergy(type, combined);
+    const name = cleanProjectName(title);
 
-Return ONLY a valid JSON array. No markdown fences, no explanation, no preamble.`;
+    let dod = '';
+    let context = '';
+    let suggestedNPA = '';
 
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error.message);
-    const text = (data.content || []).map(c => c.text || '').join('');
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed2 = JSON.parse(clean);
+    if (isProject) {
+      dod = 'A clearly usable first version of "' + name + '" exists inside Project OS with enough detail to resume work without rethinking the plan.';
+      context = first
+        ? 'Imported from ChatGPT. First message: ' + first.slice(0, 220)
+        : 'Imported from ChatGPT conversation titled "' + title + '".';
+      if (type === 'Business') {
+        suggestedNPA = 'Open this project in Project OS and turn the conversation into a 3-step execution checklist.';
+      } else if (type === 'Life Admin') {
+        suggestedNPA = 'Open this project and write the single next concrete admin step with any dates or numbers you already know.';
+      } else if (type === 'Creative') {
+        suggestedNPA = 'Open this project and create a rough first-pass brief or sketch plan from the imported conversation.';
+      } else {
+        suggestedNPA = 'Open this project and write the first build/test step you can complete in one focused session.';
+      }
+    }
 
-    // Map back by idx — fallback by position if idx missing
-    return parsed2.map((r, pos) => {
-      const srcIdx = (r.idx !== undefined) ? r.idx : pos;
-      const src = items[srcIdx] || items[pos] || items[0];
-      return {
-        id: uid(),
-        title: r.title || src.title,
-        isProject: !!r.isProject,
-        name: r.name || src.title,
-        type: r.type || 'Technical',
-        energy: r.energy || 'Medium',
-        dod: r.dod || '',
-        context: r.context || '',
-        suggestedNPA: r.suggestedNPA || '',
-        source: src.title,
-        firstMessage: src.firstMessage || '',
-        date: src.date || '',
-        messageCount: src.messageCount || 0,
-        duplicate: existingNames.includes((r.name || src.title).toLowerCase())
-      };
-    });
-  } catch(err) {
-    console.warn('Batch analysis error:', err);
-    // Graceful fallback — treat all as projects so user can decide
-    return items.map(i => ({
-      id: uid(), title: i.title, isProject: true, name: i.title,
-      type: 'Technical', energy: 'Medium', dod: '', context: '',
-      suggestedNPA: '', source: i.title,
-      firstMessage: i.firstMessage || '', date: i.date || '',
+    return {
+      id: uid(),
+      title,
+      isProject,
+      name,
+      type,
+      energy,
+      dod,
+      context,
+      suggestedNPA,
+      source: title,
+      firstMessage: first,
+      date: i.date || '',
       messageCount: i.messageCount || 0,
-      duplicate: existingNames.includes(i.title.toLowerCase())
-    }));
-  }
+      duplicate: existingNames.includes(name.toLowerCase())
+    };
+  });
+}
+
+async function analyzeBatch(items, existingNames) {
+  return heuristicAnalyzeBatch(items, existingNames);
 }
 
 function commitImport() {
